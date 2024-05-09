@@ -15,18 +15,10 @@
 #define F_CPU (16000000UL / PRESCALER) //~2.667MHz
 #include <util/delay.h>
 
-#define DELAY 2000
-
 //For UART
 #define BAUD_RATE 9600
 #define S 16UL
 #define BAUD_SETTING ((64 * F_CPU) / (BAUD_RATE * S))
-
-//Macros for bits
-#define SET_BIT(r, b) (r |= (0x01 << b))
-#define CLR_BIT(r, b) (r &= ~(0x01 << b))
-#define TGL_BIT(r, b) (r ^= (0x01 << b))
-#define GET_BIT(r, b) ((r >> b) & 0x01)
 
 //Specific pins
 #define RED_LED 0
@@ -38,7 +30,15 @@
 #define HORN 2
 
 //Perception, planning, action
+void Perceive_Buttons(void);
+void Perceive_Input(void);
 void Perception(void);
+void fsmIGN1(void);
+void fsmIGN2(void);
+void fsmHorn(void);
+void fsmR(void);
+void fsmG(void);
+void fsmY(void);
 void Planning(void);
 void Action(void);
 
@@ -72,6 +72,16 @@ bool Send_IGN1_message = false;
 bool Send_IGN2_message = false;
 bool Send_Horn_message = false;
 
+bool Get_input = false;
+
+bool Input_R = false;
+bool Input_G = false;
+bool Input_Y = false;
+
+bool Toggle_red = false;
+bool Toggle_green = false;
+bool Toggle_yellow = false;
+
 int main(void)
 {
 	USART1_Init();
@@ -87,21 +97,56 @@ int main(void)
     }
 }
 
-void Perception(void) {
+void Perceive_Buttons(void) {
 	bool ign1_pressed = BTN_Pressed(IGN_1);
 	bool ign2_pressed = BTN_Pressed(IGN_2);
 	bool horn_pressed = BTN_Pressed(HORN);
 	if (ign1_pressed && !ign2_pressed && !horn_pressed) {
-		IGN1_pressed = true;
-	} else if (!ign1_pressed && ign2_pressed && !horn_pressed) {
-		IGN2_pressed = true;
-	} else if (!ign1_pressed && !ign2_pressed && horn_pressed) {
-		Horn_pressed = true;
-	} else {
-		IGN1_pressed = false;
-		IGN2_pressed = false;
-		Horn_pressed = false;
+			IGN1_pressed = true;
+		} else if (!ign1_pressed && ign2_pressed && !horn_pressed) {
+			IGN2_pressed = true;
+		} else if (!ign1_pressed && !ign2_pressed && horn_pressed) {
+			Horn_pressed = true;
+		} else if (ign1_pressed && ign2_pressed && horn_pressed) {
+			Get_input = true;
+			IGN1_pressed = false;
+			IGN2_pressed = false;
+			Horn_pressed = false;
+			USART1_Transmit_String("Give the letter of the light you want to turn on:\r\n");
+		} else {
+			IGN1_pressed = false;
+			IGN2_pressed = false;
+			Horn_pressed = false;
 	}
+}
+
+void Perceive_Input(void) {
+	uint8_t input = 0;
+	do {
+		wdt_reset();
+		input = USART1_Receive();
+	} while (!((input == 'G') || (input == 'R') || (input == 'Y')));
+	
+	switch (input)
+	{
+	case 'R':
+		Input_R = true;
+		break;
+	case 'G':
+		Input_G = true;
+		break;
+	case 'Y':
+		Input_Y = true;
+		break;
+	default:
+		Input_R = false;
+		Input_G = false;
+		Input_Y = false;
+	}
+}
+
+void Perception(void) {
+	Get_input ? Perceive_Input() : Perceive_Buttons();
 }
 
 void fsmIGN1(void) {
@@ -176,22 +221,108 @@ void fsmHorn(void) {
 	}
 }
 
+void fsmR(void) {
+	static uint8_t R_state = 0;
+	switch (R_state)
+	{
+		case 0:
+			Toggle_red = false;
+			if (Input_R) {
+				R_state = 1;
+			}
+			break;
+		case 1:
+			Toggle_red = true;
+			R_state = 0;
+			break;
+	}
+}
+
+void fsmG(void) {
+	static uint8_t G_state = 0;
+	switch (G_state)
+	{
+		case 0:
+			Toggle_green = false;
+			if (Input_G) {
+				G_state = 1;
+			}
+			break;
+		case 1:
+			Toggle_green = true;
+			G_state = 0;
+			break;
+	}
+}
+
+void fsmY(void) {
+	static uint8_t Y_state = 0;
+	switch (Y_state)
+	{
+		case 0:
+			Toggle_yellow = false;
+			if (Input_Y) {
+				Y_state = 1;
+			}
+			break;
+		case 1:
+			Toggle_yellow = true;
+			Y_state = 0;
+			break;
+	}
+}
+
 void Planning(void) {
-	fsmIGN1();
-	fsmIGN2();
-	fsmHorn();
+	if (Get_input) {
+		fsmR();
+		fsmG();
+		fsmY();	
+	} else {
+		fsmIGN1();
+		fsmIGN2();
+		fsmHorn();
+	}
 }
 
 void Action(void) {
-	Turn_red_on ? LED_On(RED_LED) : LED_Off(RED_LED);
-	
-	Turn_green_on ? LED_On(GREEN_LED) : LED_Off(GREEN_LED);
+	if (Get_input) {
+		if (Toggle_red) {
+			LED_Tgl(RED_LED);
+			while (USART1_Receive() != 'R') {
+				wdt_reset();
+			}
+			LED_Tgl(RED_LED);
+		}
+		
+		if (Toggle_green) {
+			LED_Tgl(GREEN_LED);
+			while (USART1_Receive() != 'G') {
+				wdt_reset();
+			}
+			LED_Tgl(GREEN_LED);
+		}
+		
+		if (Toggle_yellow) {
+			LED_Tgl(GREEN_LED);
+			LED_Tgl(RED_LED);
+			while (USART1_Receive() != 'Y') {
+				wdt_reset();
+			}
+			LED_Tgl(GREEN_LED);
+			LED_Tgl(RED_LED);
+		}
+		Get_input = false;
+	} else {
+		Turn_red_on ? LED_On(RED_LED) : LED_Off(RED_LED);
+			
+		Turn_green_on ? LED_On(GREEN_LED) : LED_Off(GREEN_LED);
 
-	Send_IGN1_message ? USART1_Transmit_String("IGN_1 button was pressed\r\n") : (void)0;
+		Send_IGN1_message ? USART1_Transmit_String("IGN_1 button was pressed\r\n") : (void)0;
 
-	Send_IGN2_message ? USART1_Transmit_String("IGN_2 button was pressed\r\n") : (void)0;
+		Send_IGN2_message ? USART1_Transmit_String("IGN_2 button was pressed\r\n") : (void)0;
 
-	Send_Horn_message ? USART1_Transmit_String("HORN button was pressed\r\n") : (void)0;
+		Send_Horn_message ? USART1_Transmit_String("HORN button was pressed\r\n") : (void)0;
+	}
 }
 
 void USART1_Init(void) {

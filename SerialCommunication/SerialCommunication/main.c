@@ -55,6 +55,13 @@ void USART1_Transmit_Number(uint8_t num) {
 	}
 }
 
+void USART1_Transmit_String(char* string) {
+	uint16_t string_len = strlen(string);
+	for (uint16_t i = 0; i < string_len; i++) {
+		USART1_Transmit((uint8_t)string[i]);
+	}
+}
+
 uint8_t USART1_Receive(void) {
 	while (!(USART1.STATUS & USART_RXCIF_bm));  // Wait for data to be received
 	return USART1.RXDATAL;  // Get and return received data from buffer

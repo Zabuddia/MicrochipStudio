@@ -15,7 +15,7 @@ int main(void)
 {
 	PORTF.DIRSET = (0x01 << RED_LED);
 	PORTF.OUTCLR = (0x01 << RED_LED);
-	
+
 	ADC0.CTRLA = 0x07; //Set Resolution, Freerun, and Enable ADC
 	ADC0.MUXPOS = 0x0E; //Set the ADC input pin to pin 14
 	ADC0.COMMAND = 0x01; //Told it to start doing ADC

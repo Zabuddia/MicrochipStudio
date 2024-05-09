@@ -7,17 +7,27 @@
 
 #include <avr/io.h>
 #include <avr/wdt.h>
-#define F_CPU 2640000UL
 #include <util/delay.h>
 
-#define OUTPUT_PIN 0
+#define RED_LED 0
 
 int main(void)
 {
-	PORTF.DIR = (0x01 << OUTPUT_PIN);
+	PORTF.DIRSET = (0x01 << RED_LED);
+	PORTF.OUTCLR = (0x01 << RED_LED);
+	
+	ADC0.CTRLA = 0x07; //Set Resolution, Freerun, and Enable ADC
+	ADC0.MUXPOS = 0x0E; //Set the ADC input pin to pin 14
+	ADC0.COMMAND = 0x01; //Told it to start doing ADC
+	
 	while(1) {
-		PORTF.OUT ^= (0x01 << OUTPUT_PIN);
-		_delay_ms(500);
 		wdt_reset();
+		//When the button is pressed, ADC0.RES is 0x00FF
+		if (ADC0.RES >= 0xFF) {
+			PORTF.OUTSET = (0x01 << RED_LED);
+		} else {
+			PORTF.OUTCLR = (0x01 << RED_LED);
+		}
+		_delay_ms(10);
 	}
 }

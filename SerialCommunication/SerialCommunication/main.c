@@ -5,11 +5,13 @@
  * Author : fifea
  */ 
 
-#define PRESCALAR 6
+#define PRESCALER 6
+//#define PRESCALER ((CLKCTRL.MCLKCTRLB >> 0x01) & 0x0F) This is where you can find the prescaler value
 
 #include <avr/io.h>
+#include <stdio.h>
 #include <avr/wdt.h>
-#define F_CPU (16000000UL / PRESCALAR) //~2.667MHz
+#define F_CPU (16000000UL / PRESCALER) //~2.667MHz
 #include <util/delay.h>
 
 #define BAUD_RATE 9600
@@ -41,6 +43,16 @@ void USART1_Init(void) {
 void USART1_Transmit(uint8_t data) {
 	while (!(USART1.STATUS & USART_DREIF_bm));  // Wait for empty transmit buffer
 	USART1.TXDATAL = data;  // Put data into buffer, sends the data
+}
+
+void USART1_Transmit_Number(uint8_t num) {
+	char buffer[10];  // Buffer to hold the ASCII representation of the number
+	sprintf(buffer, "%d", num);  // Convert the number to a string
+
+	// Transmit each character of the string
+	for (int i = 0; buffer[i] != '\0'; i++) {
+		USART1_Transmit((uint8_t)buffer[i]);
+	}
 }
 
 uint8_t USART1_Receive(void) {

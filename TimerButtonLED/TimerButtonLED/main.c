@@ -6,11 +6,17 @@
  */ 
 
 #include <avr/io.h>
-
+#include <avr/wdt.h>
+#include "../../IncludeFiles/LED.h"
+#include "../../IncludeFiles/UART.h"
+#include "../../IncludeFiles/Button.h"
+#include "../../IncludeFiles/Timer.h"
 
 int main(void)
 {
-    /* Replace with your application code */
+    ADC_Init();
+	LED_Init();
+	USART1_Init();
     while (1) 
     {
     }

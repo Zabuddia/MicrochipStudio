@@ -3,7 +3,9 @@
 
 #define PRESCALER 6
 
-#include <avr/iom1608.h>
+#include <avr/io.h>
+#include <string.h>
+#include <stdio.h>
 
 #define F_CPU (16000000UL / PRESCALER)
 #define BAUD_RATE 9600

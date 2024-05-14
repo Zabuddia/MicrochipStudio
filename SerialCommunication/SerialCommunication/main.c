@@ -11,6 +11,8 @@
 #include <avr/io.h>
 #include <stdio.h>
 #include <avr/wdt.h>
+#include <stdio.h>
+#include <string.h>
 #define F_CPU (16000000UL / PRESCALER) //~2.667MHz
 #include <util/delay.h>
 
@@ -41,7 +43,7 @@ void USART1_Init(void) {
 }
 
 void USART1_Transmit(uint8_t data) {
-	while (!(USART1.STATUS & USART_DREIF_bm));  // Wait for empty transmit buffer
+	while (!(USART1.STATUS & USART_DREIF_bm)) wdt_reset();  // Wait for empty transmit buffer
 	USART1.TXDATAL = data;  // Put data into buffer, sends the data
 }
 
@@ -63,15 +65,14 @@ void USART1_Transmit_String(char* string) {
 }
 
 uint8_t USART1_Receive(void) {
-	while (!(USART1.STATUS & USART_RXCIF_bm));  // Wait for data to be received
+	while (!(USART1.STATUS & USART_RXCIF_bm)) wdt_reset();  // Wait for data to be received
 	return USART1.RXDATAL;  // Get and return received data from buffer
 }
 
 int main(void) {
 	USART1_Init();
 	while (1) {
-		USART1_Transmit('U');
-		_delay_ms(DELAY);
-		wdt_reset();
+		uint8_t message = USART1_Receive();
+		USART1_Transmit(message);
 	}
 }

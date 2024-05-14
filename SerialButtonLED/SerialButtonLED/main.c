@@ -10,8 +10,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 #include <avr/io.h>
 #include <avr/wdt.h>
+#include <avr/interrupt.h>
 #define F_CPU (16000000UL / PRESCALER) //~2.667MHz
 #include <util/delay.h>
 
@@ -19,6 +21,9 @@
 #define BAUD_RATE 9600
 #define S 16UL
 #define BAUD_SETTING ((64 * F_CPU) / (BAUD_RATE * S))
+
+//For timer
+#define TOP_VALUE 26664 //For an interrupt every 1/100th of a second
 
 //Specific pins
 #define RED_LED 0
@@ -45,7 +50,7 @@ void Action(void);
 //UART functions
 void USART1_Init(void);
 void USART1_Transmit(uint8_t data);
-void USART1_Transmit_Number(uint8_t num);
+void USART1_Transmit_Number(uint16_t num);
 void USART1_Transmit_String(char* string);
 uint8_t USART1_Receive(void);
 
@@ -59,6 +64,12 @@ void LED_Tgl(uint8_t led);
 void ADC_Init(void);
 void ADC_Switch(uint8_t btn);
 bool BTN_Pressed(uint8_t btn);
+
+//Timer functions
+void Timer_Init(uint16_t top_value);
+void Timer_Start(void);
+void Timer_Stop(void);
+void Timer_Reset(void);
 
 //Global variables
 bool IGN1_pressed = false;
@@ -82,11 +93,22 @@ bool Toggle_red = false;
 bool Toggle_green = false;
 bool Toggle_yellow = false;
 
+uint16_t counter = 0;
+
+//Interrupt function
+ISR(TCB0_INT_vect) {
+	TCB0.INTFLAGS = TCB_CAPT_bm;
+	counter++;
+}
+
 int main(void)
 {
 	USART1_Init();
 	LED_Init();
 	ADC_Init();
+	uint16_t top_value = TOP_VALUE;
+	Timer_Init(top_value);
+	sei();
 	
     while (1)
     {
@@ -112,7 +134,10 @@ void Perceive_Buttons(void) {
 			IGN1_pressed = false;
 			IGN2_pressed = false;
 			Horn_pressed = false;
+			LED_Off(RED_LED);
+			LED_Off(GREEN_LED);
 			USART1_Transmit_String("Give the letter of the light you want to turn on:\r\n");
+			Perceive_Input();
 		} else {
 			IGN1_pressed = false;
 			IGN2_pressed = false;
@@ -125,18 +150,25 @@ void Perceive_Input(void) {
 	do {
 		wdt_reset();
 		input = USART1_Receive();
+		input = toupper(input);
 	} while (!((input == 'G') || (input == 'R') || (input == 'Y')));
 	
 	switch (input)
 	{
 	case 'R':
 		Input_R = true;
+		Input_G = false;
+		Input_Y = false;
 		break;
 	case 'G':
 		Input_G = true;
+		Input_R = false;
+		Input_Y = false;
 		break;
 	case 'Y':
 		Input_Y = true;
+		Input_G = false;
+		Input_R = false;
 		break;
 	default:
 		Input_R = false;
@@ -146,7 +178,7 @@ void Perceive_Input(void) {
 }
 
 void Perception(void) {
-	Get_input ? Perceive_Input() : Perceive_Buttons();
+	Perceive_Buttons();
 }
 
 void fsmIGN1(void) {
@@ -222,53 +254,26 @@ void fsmHorn(void) {
 }
 
 void fsmR(void) {
-	static uint8_t R_state = 0;
-	switch (R_state)
-	{
-		case 0:
-			Toggle_red = false;
-			if (Input_R) {
-				R_state = 1;
-			}
-			break;
-		case 1:
-			Toggle_red = true;
-			R_state = 0;
-			break;
+	if (Input_R) {
+		Toggle_red = true;
+	} else {
+		Toggle_red = false;
 	}
 }
 
 void fsmG(void) {
-	static uint8_t G_state = 0;
-	switch (G_state)
-	{
-		case 0:
-			Toggle_green = false;
-			if (Input_G) {
-				G_state = 1;
-			}
-			break;
-		case 1:
-			Toggle_green = true;
-			G_state = 0;
-			break;
+	if (Input_G) {
+		Toggle_green = true;
+	} else {
+		Toggle_green = false;
 	}
 }
 
 void fsmY(void) {
-	static uint8_t Y_state = 0;
-	switch (Y_state)
-	{
-		case 0:
-			Toggle_yellow = false;
-			if (Input_Y) {
-				Y_state = 1;
-			}
-			break;
-		case 1:
-			Toggle_yellow = true;
-			Y_state = 0;
-			break;
+	if (Input_Y) {
+		Toggle_yellow = true;
+	} else {
+		Toggle_yellow = false;
 	}
 }
 
@@ -288,28 +293,46 @@ void Action(void) {
 	if (Get_input) {
 		if (Toggle_red) {
 			LED_Tgl(RED_LED);
-			while (USART1_Receive() != 'R') {
-				wdt_reset();
-			}
+			Timer_Start();
+			USART1_Transmit_String("Press any key to turn the red LED off\n\r");
+			USART1_Receive();
+			Timer_Stop();
 			LED_Tgl(RED_LED);
+			USART1_Transmit_String("Red LED was on for about ");
+			USART1_Transmit_Number((uint16_t)(counter * 10));
+			USART1_Transmit_String(" milliseconds\n\r");
+			counter = 0;
+			Toggle_red = false;
 		}
 		
 		if (Toggle_green) {
 			LED_Tgl(GREEN_LED);
-			while (USART1_Receive() != 'G') {
-				wdt_reset();
-			}
+			Timer_Start();
+			USART1_Transmit_String("Press any key to turn the green LED off\n\r");
+			USART1_Receive();
+			Timer_Stop();
 			LED_Tgl(GREEN_LED);
+			USART1_Transmit_String("Green LED was on for about ");
+			USART1_Transmit_Number((uint16_t)(counter * 10));
+			USART1_Transmit_String(" milliseconds\n\r");
+			counter = 0;
+			Toggle_green = false;
 		}
 		
 		if (Toggle_yellow) {
 			LED_Tgl(GREEN_LED);
 			LED_Tgl(RED_LED);
-			while (USART1_Receive() != 'Y') {
-				wdt_reset();
-			}
+			Timer_Start();
+			USART1_Transmit_String("Press any key to turn the yellow LED off\n\r");
+			USART1_Receive();
+			Timer_Stop();
 			LED_Tgl(GREEN_LED);
 			LED_Tgl(RED_LED);
+			USART1_Transmit_String("Yellow LED was on for about ");
+			USART1_Transmit_Number((uint16_t)(counter * 10));
+			USART1_Transmit_String(" milliseconds\n\r");
+			counter = 0;
+			Toggle_yellow = false;
 		}
 		Get_input = false;
 	} else {
@@ -344,7 +367,7 @@ void USART1_Transmit(uint8_t data) {
 	USART1.TXDATAL = data;
 }
 
-void USART1_Transmit_Number(uint8_t num) {
+void USART1_Transmit_Number(uint16_t num) {
 	char buffer[10];
 	sprintf(buffer, "%d", num);
 
@@ -361,7 +384,7 @@ void USART1_Transmit_String(char* string) {
 }
 
 uint8_t USART1_Receive(void) {
-	while (!(USART1.STATUS & USART_RXCIF_bm));
+	while (!(USART1.STATUS & USART_RXCIF_bm)) wdt_reset();
 	return USART1.RXDATAL;
 }
 
@@ -414,4 +437,24 @@ bool BTN_Pressed(uint8_t btn) {
 	} else {
 		return false;
 	}
+}
+
+void Timer_Init(uint16_t topValue) {
+	TCB0.CTRLA &= ~TCB_ENABLE_bm;
+	TCB0.CCMP = topValue;
+	TCB0.INTCTRL = TCB_CAPT_bm;
+}
+
+void Timer_Start(void) {
+	TCB0.CTRLA |= TCB_ENABLE_bm;
+}
+
+void Timer_Stop(void) {
+	TCB0.CTRLA &= ~TCB_ENABLE_bm;
+}
+
+void Timer_Reset(void) {
+	Timer_Stop();
+	TCB0.CNT = 0;
+	Timer_Start();
 }

@@ -11,7 +11,7 @@
 #include "LED.h"
 #include "Button.h"
 
-#define DEFAULT_BRIGHTNESS 200;
+#define DEFAULT_BRIGHTNESS 200
 
 void Set_Brightness_Red(uint8_t brightness) {
 	TCA0.SINGLE.CMP0 = brightness;

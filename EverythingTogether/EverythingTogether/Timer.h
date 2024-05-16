@@ -3,6 +3,9 @@
 
 #include <avr/io.h>
 
+#define DEFAULT_TOP_VALUE 26664
+#define DEFAULT_BRIGHTNESS 200
+
 void Timer_Init(uint16_t topValue);
 void Timer_Reset(void);
 void Timer_Start(void);

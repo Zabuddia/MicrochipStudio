@@ -1,19 +1,4 @@
-/*
- * Accelerometer.c
- *
- * Created: 5/9/2024 12:22:45 PM
- * Author : fifea
- */ 
-
-#include <avr/io.h>
-#include <avr/wdt.h>
-#include "UART.h"
-#include <util/delay.h>
-
-#define FXLS8967_REG_WHO_AM_I       0x13
-#define FXLS8967_REG_SENS_CONFIG1   0x15
-#define FXLS8967_REG_SENS_CONFIG5   0x19
-#define FXLS8967_REG_OUT_X_LSB      0x04
+#include "SPI.h"
 
 // Function to compute the integer square root of a non-negative long integer
 long lsqrt(long n) {
@@ -122,34 +107,4 @@ void FXLS8967_ReadAccel(int16_t *x, int16_t *y, int16_t *z, int16_t *a) {
 	la = (long)*x * (long)*x + (long)*y * (long)*y + (long)*z * (long)*z;
 	la = lsqrt(la);
 	*a = (uint16_t)la;
-}
-
-int main(void)
-{
-	uint8_t whoami = 0;
-	int16_t x = 0;
-	int16_t y = 0;
-	int16_t z = 0;
-	int16_t a = 0;
-	USART1_Init();
-    SPI_Init();
-	FXLS8967_Init();
-	whoami = FXLS8967_ReadByte(FXLS8967_REG_WHO_AM_I);
-	USART1_Transmit_Number(whoami); //Supposed to be 135
-	USART1_Transmit_String("\n\r");
-    while (1) 
-    {
-		wdt_reset();
-		FXLS8967_ReadAccel(&x, &y, &z, &a);
-		USART1_Transmit_String("X: ");
-		USART1_Transmit_Number(x);
-		USART1_Transmit_String(" Y: ");
-		USART1_Transmit_Number(y);
-		USART1_Transmit_String(" Z: ");
-		USART1_Transmit_Number(z);
-		USART1_Transmit_String(" A: ");
-		USART1_Transmit_Number(a);
-		USART1_Transmit_String("\n\r");
-		_delay_ms(300);
-    }
 }

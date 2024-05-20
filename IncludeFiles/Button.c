@@ -2,7 +2,7 @@
 
 void ADC_Init(void) {
 	ADC0.CTRLA = ADC_ENABLE_bm | ADC_RESSEL_8BIT_gc;
-	ADC0.CTRLB = ADC_REFSEL_VDDREF_gc;
+	ADC0.CTRLC = ADC_REFSEL_VDDREF_gc;
 }
 
 void ADC_Switch(uint8_t btn) {

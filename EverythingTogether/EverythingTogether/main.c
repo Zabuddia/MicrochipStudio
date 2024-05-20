@@ -6,6 +6,7 @@
  */ 
 
 #include <avr/io.h>
+#include <avr/eeprom.h>
 #include <avr/interrupt.h>
 #include <stdbool.h>
 #include <ctype.h>
@@ -16,6 +17,8 @@
 #include "Timer.h"
 #include "UART.h"
 #include <util/delay.h>
+
+#define POWER_VOLTS ADC_MUXPOS_AIN0_gc
 
 //PWM mode
 enum Color {
@@ -70,6 +73,10 @@ int16_t y = 0;
 int16_t z = 0;
 int16_t a = 0;
 
+//Battery calibration
+int32_t globalGain;
+uint16_t EEMEM eepromGain;
+
 void ReadAccelerometerMode(void);
 
 void PWMPerception(void);
@@ -104,6 +111,10 @@ void BlinkingLEDMode(void);
 void LEDSPIMode(void);
 
 void PWMSPIMode(void);
+
+int32_t Read_Analog(ADC_MUXPOS_t input);
+void Calibrate(void);
+void BatteryCalibrationMode(void);
 
 void ClearScreen(void);
 
@@ -159,10 +170,11 @@ ISR(TCB0_INT_vect) {
 
 int main(void)
 {
+	globalGain = (int16_t)eeprom_read_word(&eepromGain);
 	uint8_t c = 0;
 	USART1_Init();
 	SPI_Init();
-	ADC_Init();
+	ADC_Button_Init();
 	LED_Init();
 	Timer_Init(DEFAULT_TOP_VALUE);
 	TCA0_Init();
@@ -184,6 +196,7 @@ int main(void)
 		USART1_Transmit_String("\tb: Blinking LED\n\r");
 		USART1_Transmit_String("\ti: LED SPI\n\r");
 		USART1_Transmit_String("\tv: PWM SPI\n\r");
+		USART1_Transmit_String("\ty: Battery calibration\n\r");
 		USART1_Transmit_String("\tc: Clear screen\n\r");
 		USART1_Transmit_String("\tr: Reset\n\r");
 		c = USART1_Receive();
@@ -216,6 +229,9 @@ int main(void)
 			break;
 		case 'v':
 			PWMSPIMode();
+			break;
+		case 'y':
+			BatteryCalibrationMode();
 			break;
 		case 'c':
 			ClearScreen();
@@ -767,6 +783,83 @@ void PWMSPIMode(void) {
 	}
 	Set_Brightness_Red(0);
 	Set_Brightness_Green(0);
+}
+
+int32_t Read_Analog(ADC_MUXPOS_t input) {
+	int32_t value = ADC_Read(input);
+	if (input == POWER_VOLTS) {
+		value = (value * 250L) / 1023L;
+		if (globalGain < 0) {
+			value = value + (value / ((globalGain - 500L) / 1000L));  // Adjust the calculation for globalGain
+			} else if (globalGain > 0) {
+			value = value + (value / ((globalGain + 500L) / 1000L));  // Adjust the calculation for globalGain
+		}
+	}
+	return value;
+}
+
+void Calibrate(void) {
+	USART1_Transmit_String("Enter multimeter-measured voltage (12V would be 1200):\n\r");
+	uint8_t actualVoltage1 = USART1_Receive();
+	uint8_t actualVoltage2 = USART1_Receive();
+	uint8_t actualVoltage3 = USART1_Receive();
+	uint8_t actualVoltage4 = USART1_Receive();
+	char actualVoltageStr[5] = {actualVoltage1, actualVoltage2, actualVoltage3, actualVoltage4, '\0'};
+	int32_t actualVoltage = atoi(actualVoltageStr); // Convert string to integer
+	
+	// Debugging: print the actual voltage received
+	char debugBuffer[20];
+	sprintf(debugBuffer, "Actual: %ld\n\r", actualVoltage);
+	USART1_Transmit_String(debugBuffer);
+
+	int32_t measuredVoltage = ADC_Read(POWER_VOLTS);
+	int32_t measuredVoltagemV = (measuredVoltage * 250UL) / 1023;
+
+	// Debugging: print the measured voltage
+	sprintf(debugBuffer, "Measured: %ld\n\r", measuredVoltagemV);
+	USART1_Transmit_String(debugBuffer);
+
+	int32_t temp = actualVoltage - measuredVoltagemV;
+
+	// Debugging: print the temp value
+	sprintf(debugBuffer, "Temp: %ld\n\r", temp);
+	USART1_Transmit_String(debugBuffer);
+
+	if (temp != 0) {
+		globalGain = (measuredVoltagemV * 1000L + temp / 2L) / temp;  // Calculate the globalGain using long integer division to avoid precision issues
+		} else {
+		globalGain = 0;
+	}
+	
+	eeprom_write_word(&eepromGain, (uint16_t)globalGain);
+
+	// Debugging: print the globalGain value
+	sprintf(debugBuffer, "Gain: %ld\n\r", globalGain);
+	USART1_Transmit_String(debugBuffer);
+}
+
+void BatteryCalibrationMode(void) {
+	USART1_Transmit_String("You are in Battery calibration mode (press q to exit)\n\r");
+	USART1_Transmit_String("This outputs the reading of the battery voltage. Press c to calibrate\n\r");
+	ADC_Init();
+	uint8_t quit = 0;
+	int32_t batteryVolts = 0;
+	while (tolower(quit) != 'q') {
+		quit = 0;
+		wdt_reset();
+		batteryVolts = Read_Analog(POWER_VOLTS);
+		char buffer[10] = {0};
+		sprintf(buffer, "%ld\n\r", batteryVolts);
+		USART1_Transmit_String(buffer);
+		if (USART1.STATUS & USART_RXCIF_bm) {
+			quit = USART1_Receive_No_Wait();
+		}
+		if (tolower(quit) == 'c') {
+			Calibrate();
+		}
+		_delay_ms(300);
+	}
+	ADC_Button_Init();
 }
 
 void ClearScreen(void) {
